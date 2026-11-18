@@ -14,6 +14,7 @@ export function initUserPortal() {
     await executeUserLogin(pendingLoginPayload);
   });
 
+  
   document.getElementById('btnForceTakeover').addEventListener('click', async () => {
     if (!pendingLoginPayload) return;
     bootstrap.Modal.getInstance(document.getElementById('sessionConflictModal')).hide();
