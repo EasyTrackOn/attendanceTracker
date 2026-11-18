@@ -1,19 +1,36 @@
 import { callApi, showToast } from './config.js';
 
+const SCAN_TIMEOUT_SECONDS = 15;
+
 let videoStream = null;
 let scanLoopTimer = null;
+let countdownTimer = null;
 let codeReader = null;
 let previousFrameGray = null;
 let motionAccumulated = 0;
+let isSubmitting = false;
 
 export async function openScanner(onSuccessCallback) {
   const overlay = document.getElementById('scannerOverlay');
   const video = document.getElementById('cameraVideo');
   const statusBadge = document.getElementById('scannerStatus');
+  const timerBadge = document.getElementById('scannerTimerBadge');
+  const progressBar = document.getElementById('scannerProgressBar');
+  const guideFrame = document.getElementById('a4GuideFrame');
+
+  // Wire both top and bottom Cancel buttons
+  document.getElementById('btnCloseScanner').onclick = () => closeScanner('Scan cancelled.');
+  document.getElementById('btnCancelScannerBottom').onclick = () => closeScanner('Scan cancelled.');
 
   overlay.classList.add('active');
+  guideFrame.classList.remove('markers-locked');
   motionAccumulated = 0;
   previousFrameGray = null;
+  isSubmitting = false;
+
+  let remainingSec = SCAN_TIMEOUT_SECONDS;
+  timerBadge.textContent = `${remainingSec}s`;
+  progressBar.style.width = '100%';
   statusBadge.textContent = 'Starting camera...';
 
   try {
@@ -25,17 +42,43 @@ export async function openScanner(onSuccessCallback) {
     await video.play();
 
     codeReader = new ZXing.BrowserQRCodeReader();
-    statusBadge.textContent = 'Align printed poster & 4 corner markers inside frame';
+    statusBadge.textContent = 'Fit A4 poster inside the frame';
 
-    scanLoopTimer = setInterval(() => processFrame(video, onSuccessCallback), 350);
+    // 1. Start 15-second countdown timer
+    countdownTimer = setInterval(() => {
+      if (isSubmitting) return; // Pause timeout while server validates a detected QR
+      remainingSec -= 1;
+      timerBadge.textContent = `${Math.max(0, remainingSec)}s`;
+      progressBar.style.width = `${Math.max(0, (remainingSec / SCAN_TIMEOUT_SECONDS) * 100)}%`;
+
+      if (remainingSec <= 5) {
+        timerBadge.className = 'badge bg-danger';
+        progressBar.className = 'progress-bar bg-danger';
+      } else {
+        timerBadge.className = 'badge bg-primary';
+        progressBar.className = 'progress-bar bg-success';
+      }
+
+      if (remainingSec <= 0) {
+        closeScanner('Scan timed out (15s). Please try again.');
+      }
+    }, 1000);
+
+    // 2. Start frame scanning loop
+    scanLoopTimer = setInterval(() => processFrame(video, onSuccessCallback), 300);
   } catch (err) {
     closeScanner();
     showToast('Camera Permission Required', 'danger');
   }
 }
 
-export function closeScanner() {
+export function closeScanner(toastMessage = '') {
   clearInterval(scanLoopTimer);
+  clearInterval(countdownTimer);
+  scanLoopTimer = null;
+  countdownTimer = null;
+  isSubmitting = false;
+
   if (videoStream) {
     videoStream.getTracks().forEach(t => t.stop());
     videoStream = null;
@@ -44,11 +87,15 @@ export function closeScanner() {
     previousFrameGray.delete();
     previousFrameGray = null;
   }
+
   document.getElementById('scannerOverlay').classList.remove('active');
+  if (toastMessage) {
+    showToast(toastMessage, 'secondary');
+  }
 }
 
 async function processFrame(video, onSuccessCallback) {
-  if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+  if (isSubmitting || video.readyState !== video.HAVE_ENOUGH_DATA) return;
 
   const canvas = document.getElementById('overlayCanvas');
   const ctx = canvas.getContext('2d');
@@ -61,21 +108,29 @@ async function processFrame(video, onSuccessCallback) {
   try {
     qrResult = codeReader.decodeFromCanvas(canvas);
   } catch (_) {
-    // No QR in current frame
+    // No QR detected yet
   }
 
   // 2. OpenCV.js 4-Point Geometric Detection & Screen-Replay Risk Signals
   const cvMetrics = analyzePosterGeometryAndScreenRisk(canvas);
-
+  const guideFrame = document.getElementById('a4GuideFrame');
   const statusBadge = document.getElementById('scannerStatus');
+
+  if (cvMetrics.markersDetected === 4) {
+    guideFrame.classList.add('markers-locked');
+  } else {
+    guideFrame.classList.remove('markers-locked');
+  }
+
   if (!qrResult) {
-    statusBadge.textContent = `Markers detected: ${cvMetrics.markersDetected}/4 — Point at QR Poster`;
+    statusBadge.textContent = `Markers: ${cvMetrics.markersDetected}/4 — Hold steady on A4 poster`;
     return;
   }
 
-  // Pause loop while validating with server
+  // Lock submission & pause countdown while backend verifies
+  isSubmitting = true;
   clearInterval(scanLoopTimer);
-  statusBadge.textContent = 'Verifying geometry, GPS & credentials...';
+  statusBadge.textContent = 'QR detected! Verifying attendance...';
 
   try {
     const gps = await getCurrentGPS();
@@ -91,7 +146,7 @@ async function processFrame(video, onSuccessCallback) {
       closeScanner();
       onSuccessCallback(res.receipt);
     } else if (res.code === 'CHALLENGE_REQUIRED') {
-      // Physical scene movement challenge
+      isSubmitting = false;
       statusBadge.textContent = 'Move phone slightly left/right while keeping poster visible...';
       motionAccumulated = 0;
       scanLoopTimer = setInterval(() => processFrame(video, onSuccessCallback), 300);
@@ -105,10 +160,6 @@ async function processFrame(video, onSuccessCallback) {
   }
 }
 
-/**
- * Uses OpenCV.js (when loaded) to detect the 4 corner reference markers (P1..P4),
- * compute perspective distortion, check moiré/glare screen signals, and track frame motion.
- */
 function analyzePosterGeometryAndScreenRisk(canvas) {
   if (typeof cv === 'undefined' || !cv.Mat) {
     return {
@@ -127,7 +178,6 @@ function analyzePosterGeometryAndScreenRisk(canvas) {
   try {
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
-    // Track inter-frame motion for physical parallax challenge
     if (previousFrameGray) {
       let diff = new cv.Mat();
       cv.absdiff(gray, previousFrameGray, diff);
@@ -137,7 +187,6 @@ function analyzePosterGeometryAndScreenRisk(canvas) {
     if (previousFrameGray) previousFrameGray.delete();
     previousFrameGray = gray.clone();
 
-    // Detect square concentric fiduciary corner markers
     cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 21, 5);
     cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
@@ -153,7 +202,6 @@ function analyzePosterGeometryAndScreenRisk(canvas) {
       }
     }
 
-    // Sort top-4 largest square markers clockwise: P1(TL), P2(TR), P3(BR), P4(BL)
     candidates.sort((a, b) => b.area - a.area);
     const top4 = candidates.slice(0, 4);
     let normalizedError = 0.06;
@@ -174,19 +222,17 @@ function analyzePosterGeometryAndScreenRisk(canvas) {
       normalizedError = Number(((widthSymmetry + heightSymmetry) / 2).toFixed(3));
     }
 
-    // Screen-replay risk heuristic: specular reflection saturation + high-frequency pixel grid variance
     let laplacian = new cv.Mat();
     cv.Laplacian(gray, laplacian, cv.CV_64F);
     let mean = new cv.Mat();
     let stddev = new cv.Mat();
     cv.meanStdDev(laplacian, mean, stddev);
     const sharpnessVar = stddev.doubleAt(0, 0);
-
-    // High glare/unnatural brightness check
     const avgBrightness = cv.mean(gray)[0];
+
     let riskScore = 10;
-    if (avgBrightness > 215) riskScore += 35; // Screen backlight/glare
-    if (sharpnessVar > 65) riskScore += 30;   // Moiré subpixel grid interference
+    if (avgBrightness > 215) riskScore += 35;
+    if (sharpnessVar > 65) riskScore += 30;
 
     laplacian.delete();
     mean.delete();
@@ -194,15 +240,8 @@ function analyzePosterGeometryAndScreenRisk(canvas) {
 
     return {
       markersDetected: top4.length,
-      geometry: {
-        markersDetected: top4.length,
-        normalizedError
-      },
-      screenRisk: {
-        riskScore: Math.min(100, riskScore),
-        avgBrightness: Math.round(avgBrightness),
-        moireScore: Math.round(sharpnessVar)
-      }
+      geometry: { markersDetected: top4.length, normalizedError },
+      screenRisk: { riskScore: Math.min(100, riskScore), avgBrightness: Math.round(avgBrightness), moireScore: Math.round(sharpnessVar) }
     };
   } finally {
     src.delete();
@@ -219,7 +258,7 @@ function getCurrentGPS() {
     navigator.geolocation.getCurrentPosition(
       pos => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy }),
       () => resolve(null),
-      { enableHighAccuracy: true, timeout: 7000 }
+      { enableHighAccuracy: true, timeout: 5000 }
     );
   });
 }
