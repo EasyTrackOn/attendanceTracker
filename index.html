@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Smart QR Attendance System</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+  <link href="./css/app.css" rel="stylesheet" />
+</head>
+<body>
+
+<!-- Portal Switcher Bar -->
+<nav class="navbar navbar-expand navbar-dark bg-primary px-3 shadow-sm">
+  <span class="navbar-brand fw-bold"><i class="bi bi-qr-code-scan me-2"></i>Smart QR Attendance</span>
+  <div class="ms-auto btn-group btn-group-sm">
+    <button id="switchUserPortal" class="btn btn-light fw-semibold">User Portal</button>
+    <button id="switchAdminPortal" class="btn btn-outline-light">Admin Portal</button>
+  </div>
+</nav>
+
+<!-- =======================================================================
+     1. USER PORTAL (MOBILE-FIRST)
+     ======================================================================= -->
+<main id="userPortalContainer" class="container py-4" style="max-width: 540px;">
+  <!-- User Login -->
+  <div id="userLoginSection" class="card card-modern p-4">
+    <h4 class="fw-bold mb-1">Student / Staff Login</h4>
+    <p class="text-muted small mb-3">Sign in on your registered device to mark attendance.</p>
+    <form id="userLoginForm">
+      <div class="mb-3">
+        <label class="form-label">Username / Admission No.</label>
+        <input type="text" id="userUsername" class="form-control form-control-lg" required />
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Password</label>
+        <input type="password" id="userPassword" class="form-control form-control-lg" required />
+      </div>
+      <button type="submit" class="btn btn-primary btn-lg w-100 fw-semibold">Login</button>
+    </form>
+  </div>
+
+  <!-- User Dashboard -->
+  <div id="userDashboardSection" class="d-none">
+    <div class="card card-modern p-3 mb-3">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <h5 id="uProfileName" class="fw-bold mb-0"></h5>
+          <small id="uProfileMeta" class="text-muted"></small>
+          <div class="mt-2">Today: <span id="uTodayStatus"></span></div>
+        </div>
+        <button id="btnUserLogout" class="btn btn-outline-secondary btn-sm">Logout</button>
+      </div>
+    </div>
+
+    <button id="btnOpenScanner" class="btn btn-primary btn-lg w-100 py-3 mb-3 rounded-4 shadow fw-bold">
+      <i class="bi bi-camera-fill me-2"></i>Scan Attendance QR
+    </button>
+
+    <div class="row g-2 mb-3 text-center">
+      <div class="col-3"><div class="card card-modern p-2"><div class="fw-bold text-primary" id="uStatPct">0%</div><small class="text-muted">Rate</small></div></div>
+      <div class="col-3"><div class="card card-modern p-2"><div class="fw-bold text-success" id="uStatPresent">0</div><small class="text-muted">Present</small></div></div>
+      <div class="col-3"><div class="card card-modern p-2"><div class="fw-bold text-danger" id="uStatAbsent">0</div><small class="text-muted">Absent</small></div></div>
+      <div class="col-3"><div class="card card-modern p-2"><div class="fw-bold text-warning" id="uStatLate">0</div><small class="text-muted">Late</small></div></div>
+    </div>
+
+    <div class="card card-modern p-3">
+      <h6 class="fw-bold mb-2">This Month's Attendance</h6>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead><tr><th>Date</th><th>Time</th><th>Status</th><th>Verification</th></tr></thead>
+          <tbody id="uHistoryTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- =======================================================================
+     2. ADMIN PORTAL
+     ======================================================================= -->
+<main id="adminPortalContainer" class="d-none">
+  <!-- Admin Login -->
+  <div id="adminLoginSection" class="container py-5" style="max-width: 440px;">
+    <div class="card card-modern p-4">
+      <h4 class="fw-bold mb-1">Administrator Login</h4>
+      <p class="text-muted small mb-3">Default: <code>superadmin</code> / <code>Admin@123</code></p>
+      <form id="adminLoginForm">
+        <div class="mb-3">
+          <label class="form-label">Admin Username</label>
+          <input type="text" id="adminUsername" class="form-control" required />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Password</label>
+          <input type="password" id="adminPassword" class="form-control" required />
+        </div>
+        <button type="submit" class="btn btn-dark w-100">Sign In to Admin Portal</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Admin Workspace -->
+  <div id="adminWorkspace" class="container-fluid d-none">
+    <div class="row">
+      <aside class="col-md-2 admin-sidebar p-3">
+        <div class="nav flex-column nav-pills">
+          <button class="nav-link active text-start" data-admin-tab="paneDashboard"><i class="bi bi-speedometer2 me-2"></i>Dashboard</button>
+          <button class="nav-link text-start" data-admin-tab="paneUsers"><i class="bi bi-people me-2"></i>Users</button>
+          <button class="nav-link text-start" data-admin-tab="paneClasses"><i class="bi bi-building me-2"></i>Classes</button>
+          <button class="nav-link text-start" data-admin-tab="paneQR"><i class="bi bi-qr-code me-2"></i>QR Posters</button>
+          <button class="nav-link text-start" data-admin-tab="paneAttendance"><i class="bi bi-calendar-check me-2"></i>Attendance</button>
+          <button class="nav-link text-start" data-admin-tab="paneSecurity"><i class="bi bi-shield-exclamation me-2"></i>Security Alerts</button>
+          <hr class="border-secondary" />
+          <button id="btnAdminLogout" class="btn btn-outline-light btn-sm">Logout</button>
+        </div>
+      </aside>
+
+      <section class="col-md-10 p-4">
+        <!-- Pane: Dashboard -->
+        <div id="paneDashboard" class="admin-pane">
+          <h4 class="fw-bold mb-3">Admin Overview</h4>
+          <div class="row g-3 mb-4">
+            <div class="col-md-3"><div class="card card-modern stat-card p-3"><small class="text-muted">Total Users</small><h3 id="dTotalUsers" class="fw-bold mb-0">0</h3></div></div>
+            <div class="col-md-3"><div class="card card-modern stat-card p-3"><small class="text-muted">Today's Present</small><h3 id="dPresent" class="fw-bold text-success mb-0">0</h3></div></div>
+            <div class="col-md-3"><div class="card card-modern stat-card p-3"><small class="text-muted">Today's Absent</small><h3 id="dAbsent" class="fw-bold text-danger mb-0">0</h3></div></div>
+            <div class="col-md-3"><div class="card card-modern stat-card p-3"><small class="text-muted">Attendance %</small><h3 id="dPct" class="fw-bold text-primary mb-0">0%</h3></div></div>
+            <div class="col-md-3"><div class="card card-modern stat-card p-3"><small class="text-muted">Total Classes</small><h3 id="dTotalClasses" class="fw-bold mb-0">0</h3></div></div>
+            <div class="col-md-3"><div class="card card-modern stat-card p-3"><small class="text-muted">Late Arrivals</small><h3 id="dLate" class="fw-bold text-warning mb-0">0</h3></div></div>
+            <div class="col-md-3"><div class="card card-modern stat-card p-3"><small class="text-muted">Registered Devices</small><h3 id="dDevices" class="fw-bold mb-0">0</h3></div></div>
+            <div class="col-md-3"><div class="card card-modern stat-card p-3"><small class="text-muted">Security Alerts</small><h3 id="dAlerts" class="fw-bold text-danger mb-0">0</h3></div></div>
+          </div>
+          <div class="card card-modern p-3">
+            <h6 class="fw-bold">Class-Wise Attendance Comparison</h6>
+            <canvas id="classComparisonChart" height="90"></canvas>
+          </div>
+        </div>
+
+        <!-- Pane: Users -->
+        <div id="paneUsers" class="admin-pane d-none">
+          <h4 class="fw-bold mb-3">User Management</h4>
+          <div class="card card-modern p-3 mb-3">
+            <form id="createUserForm" class="row g-2">
+              <div class="col-md-2"><input id="uAdmNo" class="form-control" placeholder="Admission ID" required /></div>
+              <div class="col-md-3"><input id="uFullName" class="form-control" placeholder="Full Name" required /></div>
+              <div class="col-md-2"><select id="uClassSelect" class="form-select"></select></div>
+              <div class="col-md-2"><input id="uMobile" class="form-control" placeholder="Mobile" /></div>
+              <div class="col-md-2"><input id="uLoginUser" class="form-control" placeholder="Username" required /></div>
+              <div class="col-md-1"><input id="uInitPass" class="form-control" placeholder="Pass" /></div>
+              <div class="col-md-2">
+                <select id="uTypeSelect" class="form-select"><option>Student</option><option>Teacher</option><option>Staff</option></select>
+              </div>
+              <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Add User</button></div>
+              <div class="col-md-5 ms-auto d-flex gap-2">
+                <input type="file" id="csvUserFile" accept=".csv" class="form-control form-control-sm" />
+                <button type="button" id="btnBulkCsvImport" class="btn btn-outline-primary btn-sm text-nowrap">Import CSV</button>
+              </div>
+            </form>
+          </div>
+          <div class="card card-modern p-3">
+            <table class="table table-hover align-middle">
+              <thead><tr><th>Admission ID</th><th>Name</th><th>Type</th><th>Mobile</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="usersTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Pane: Classes -->
+        <div id="paneClasses" class="admin-pane d-none">
+          <h4 class="fw-bold mb-3">Class & Department Management</h4>
+          <div class="card card-modern p-3 mb-3">
+            <form id="createClassForm" class="row g-2">
+              <div class="col-md-5"><input id="newClassName" class="form-control" placeholder="e.g. Class 10, Plus Two, Computer Science" required /></div>
+              <div class="col-md-4">
+                <select id="newClassCategory" class="form-select">
+                  <option>LKG</option><option>UKG</option><option>Class 1-10</option><option>Plus One</option><option>Plus Two</option><option>Department</option><option>Custom</option>
+                </select>
+              </div>
+              <div class="col-md-3"><button class="btn btn-primary w-100" type="submit">Create Class</button></div>
+            </form>
+          </div>
+          <div class="card card-modern p-3">
+            <table class="table">
+              <thead><tr><th>Class / Dept</th><th>Category</th><th>Strength</th><th>Actions</th></tr></thead>
+              <tbody id="classesTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Pane: QR Posters -->
+        <div id="paneQR" class="admin-pane d-none">
+          <h4 class="fw-bold mb-3">Permanent QR Poster Generator</h4>
+          <div class="row g-3">
+            <div class="col-md-5">
+              <div class="card card-modern p-3 mb-3">
+                <form id="createQRForm">
+                  <div class="mb-2"><input id="qrName" class="form-control" placeholder="QR Name (e.g. Main Gate)" required /></div>
+                  <div class="mb-2"><input id="qrLocationName" class="form-control" placeholder="Physical Location Name" required /></div>
+                  <div class="row g-2 mb-2">
+                    <div class="col"><input id="qrLat" class="form-control" placeholder="GPS Latitude" /></div>
+                    <div class="col"><input id="qrLng" class="form-control" placeholder="GPS Longitude" /></div>
+                  </div>
+                  <div class="mb-2"><input id="qrRadius" type="number" class="form-control" value="50" placeholder="Allowed Radius (m)" /></div>
+                  <button class="btn btn-primary w-100" type="submit">Generate Signed QR</button>
+                </form>
+              </div>
+              <div class="card card-modern p-3">
+                <table class="table table-sm">
+                  <thead><tr><th>Name</th><th>Location</th><th>Status</th><th></th></tr></thead>
+                  <tbody id="qrListTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="col-md-7">
+              <div class="d-flex justify-content-between mb-2">
+                <select id="posterSizeSelect" class="form-select form-select-sm w-auto">
+                  <option value="poster-a4-portrait">A4 Portrait</option>
+                  <option value="poster-a4-landscape">A4 Landscape</option>
+                  <option value="poster-a5-portrait">A5 Portrait</option>
+                  <option value="poster-a5-landscape">A5 Landscape</option>
+                </select>
+                <button class="btn btn-dark btn-sm" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print / Save PDF</button>
+              </div>
+              <div id="printablePosterArea" class="qr-poster-sheet poster-a4-portrait">
+                <div class="ref-marker marker-p1"></div>
+                <div class="ref-marker marker-p2"></div>
+                <div class="ref-marker marker-p3"></div>
+                <div class="ref-marker marker-p4"></div>
+                <h3 class="fw-bold mt-4">SMART QR ATTENDANCE POINT</h3>
+                <h5 id="posterLocationTitle" class="text-primary mb-4">Select or Generate a QR Location</h5>
+                <div id="posterQrCanvas" class="d-inline-block p-3 border rounded"></div>
+                <p id="posterQrId" class="text-muted small mt-3 mb-1"></p>
+                <p class="small fw-semibold">Keep all 4 corner black markers visible inside the scanner frame.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pane: Attendance Records -->
+        <div id="paneAttendance" class="admin-pane d-none">
+          <h4 class="fw-bold mb-3">Attendance Logs</h4>
+          <div class="card card-modern p-3">
+            <table class="table table-striped">
+              <thead><tr><th>Date</th><th>User</th><th>Time</th><th>Location</th><th>Verification</th><th>Status</th></tr></thead>
+              <tbody id="attendanceTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Pane: Security Alerts -->
+        <div id="paneSecurity" class="admin-pane d-none">
+          <h4 class="fw-bold mb-3">Security & Anti-Spoofing Logs</h4>
+          <div class="card card-modern p-3">
+            <table class="table table-sm">
+              <thead><tr><th>Timestamp</th><th>Event</th><th>Severity</th><th>Details</th></tr></thead>
+              <tbody id="securityLogsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<!-- Fullscreen QR Camera Scanner -->
+<div id="scannerOverlay">
+  <div class="d-flex justify-content-between align-items-center p-3 text-white bg-dark">
+    <span id="scannerStatus" class="small fw-semibold">Initializing scanner...</span>
+    <button id="btnCloseScanner" class="btn btn-sm btn-outline-light">Close</button>
+  </div>
+  <div class="scanner-viewport">
+    <video id="cameraVideo" playsinline></video>
+    <canvas id="overlayCanvas"></canvas>
+    <div class="scan-guide-box"></div>
+  </div>
+</div>
+
+<!-- Multi-Device Session Conflict Modal -->
+<div class="modal fade" id="sessionConflictModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-warning-subtle">
+        <h5 class="modal-title fw-bold">Active Session Detected</h5>
+      </div>
+      <div class="modal-body">
+        <p>Your account is currently logged in on another device:</p>
+        <ul id="conflictDeviceInfo" class="small"></ul>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel Login</button>
+        <button type="button" id="btnForceTakeover" class="btn btn-primary">Logout Previous & Continue Here</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Attendance Success Receipt Modal -->
+<div class="modal fade" id="scanSuccessModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content text-center p-4">
+      <i class="bi bi-check-circle-fill text-success display-3 mb-2"></i>
+      <h4 class="fw-bold">Attendance Successfully Recorded</h4>
+      <ul class="list-unstyled text-start bg-light p-3 rounded mt-3 small">
+        <li><strong>Name:</strong> <span id="receiptUserName"></span></li>
+        <li><strong>Date:</strong> <span id="receiptDate"></span></li>
+        <li><strong>Time:</strong> <span id="receiptTime"></span></li>
+        <li><strong>Location:</strong> <span id="receiptLocation"></span></li>
+        <li><strong>Status:</strong> <span id="receiptStatus"></span></li>
+      </ul>
+      <button type="button" class="btn btn-primary w-100" data-bs-dismiss="modal">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Notification -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 3000;">
+  <div id="liveToast" class="toast align-items-center text-bg-primary border-0" role="alert">
+    <div class="d-flex">
+      <div id="toastBody" class="toast-body"></div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
+<!-- Libraries: Bootstrap 5, Chart.js, ZXing, QRCode.js, OpenCV.js -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script async src="https://docs.opencv.org/4.9.0/opencv.js"></script>
+
+<script type="module">
+  import { initUserPortal } from './js/user.js';
+  import { initAdminPortal } from './js/admin.js';
+
+  initUserPortal();
+  initAdminPortal();
+
+  const userContainer = document.getElementById('userPortalContainer');
+  const adminContainer = document.getElementById('adminPortalContainer');
+  const btnUser = document.getElementById('switchUserPortal');
+  const btnAdmin = document.getElementById('switchAdminPortal');
+
+  btnUser.addEventListener('click', () => {
+    userContainer.classList.remove('d-none');
+    adminContainer.classList.add('d-none');
+    btnUser.className = 'btn btn-light fw-semibold';
+    btnAdmin.className = 'btn btn-outline-light';
+  });
+
+  btnAdmin.addEventListener('click', () => {
+    adminContainer.classList.remove('d-none');
+    userContainer.classList.add('d-none');
+    btnAdmin.className = 'btn btn-light fw-semibold';
+    btnUser.className = 'btn btn-outline-light';
+  });
+</script>
+</body>
+</html>
