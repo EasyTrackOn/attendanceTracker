@@ -1,5 +1,6 @@
 // Replace with your deployed Google Apps Script Web App URL
-export const GAS_API_URL = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec';
+export const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbwHWMy12vAqDSxcZATHgm05ZPfBZAiXViaNtRUPL4c1KDNqo2a4T3-h7VGyInFBPY9N/exec';
+
 
 export async function callApi(action, payload = {}, role = 'user') {
   const tokenKey = role === 'admin' ? 'admin_token' : 'user_token';
