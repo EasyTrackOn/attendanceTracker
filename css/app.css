@@ -1,52 +1,187 @@
-// Replace with your deployed Google Apps Script Web App URL
-export const GAS_API_URL = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec';
-
-export async function callApi(action, payload = {}, role = 'user') {
-  const tokenKey = role === 'admin' ? 'admin_token' : 'user_token';
-  const token = localStorage.getItem(tokenKey) || '';
-
-  const res = await fetch(GAS_API_URL, {
-    method: 'POST',
-    // Omit Content-Type header so browser sends text/plain (avoids CORS OPTIONS preflight)
-    body: JSON.stringify({ action, token, payload })
-  });
-
-  if (!res.ok) throw new Error(`Network Error (${res.status})`);
-  const data = await res.json();
-
-  if (data.error === 'SESSION_EXPIRED') {
-    localStorage.removeItem(tokenKey);
-    window.location.reload();
-  }
-  return data;
+:root {
+  --primary-blue: #0d6efd;
+  --surface-bg: #f4f7fb;
+  --card-radius: 14px;
 }
 
-/**
- * Generates a persistent client cryptographic key paired with browser metadata.
- * Server enforces actual session uniqueness via UserSessions table.
- */
-export function getDeviceMetadata() {
-  let key = localStorage.getItem('device_client_secret');
-  if (!key) {
-    key = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-    localStorage.setItem('device_client_secret', key);
-  }
-  const ua = navigator.userAgent;
-  const browser = /Edg/.test(ua) ? 'Edge' : /Chrome/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : /Firefox/.test(ua) ? 'Firefox' : 'Browser';
-  const platform = navigator.platform || 'Mobile/Web';
-
-  return {
-    deviceFingerprint: `${key}|${screen.width}x${screen.height}|${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
-    deviceName: `${platform} (${screen.width}x${screen.height})`,
-    browserInfo: browser
-  };
+body {
+  background-color: var(--surface-bg);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #1e293b;
 }
 
-export function showToast(message, type = 'primary') {
-  const toastEl = document.getElementById('liveToast');
-  const bodyEl = document.getElementById('toastBody');
-  toastEl.className = `toast align-items-center text-bg-${type} border-0`;
-  bodyEl.textContent = message;
-  const toast = bootstrap.Toast.getOrCreateInstance(toastEl);
-  toast.show();
+.card-modern {
+  border: none;
+  border-radius: var(--card-radius);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05);
+  background: #ffffff;
+}
+
+.stat-card {
+  border-left: 4px solid var(--primary-blue);
+  transition: transform 0.15s ease;
+}
+.stat-card:hover { transform: translateY(-2px); }
+
+/* Fullscreen Scanner Overlay */
+/* Fullscreen Scanner Overlay with A4 Ratio Frame */
+#scannerOverlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  background: #000;
+  z-index: 2500;
+  display: none;
+  flex-direction: column;
+}
+#scannerOverlay.active {
+  display: flex;
+}
+
+.scanner-top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(15, 23, 42, 0.92);
+  z-index: 20;
+}
+
+.scanner-viewport {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+#cameraVideo,
+#overlayCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#overlayCanvas {
+  opacity: 0; /* Used offscreen for frame capture without obstructing live video */
+  pointer-events: none;
+}
+
+/* Exact A4 Portrait Aspect Ratio (210mm x 297mm = 1 : 1.414) */
+.a4-guide-frame {
+  position: relative;
+  width: min(74vw, 48vh);
+  aspect-ratio: 1 / 1.414;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  border-radius: 12px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55); /* Dims outer area to focus on A4 poster */
+  z-index: 15;
+  pointer-events: none;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 12px;
+  transition: border-color 0.2s ease;
+}
+
+.a4-guide-frame.markers-locked {
+  border-color: #22c55e;
+}
+
+.a4-guide-label {
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+
+/* 4 Corner Fiduciary Alignment Brackets */
+.corner-bracket {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-color: #38bdf8;
+  border-style: solid;
+}
+.corner-bracket.tl { top: -2px; left: -2px; border-width: 4px 0 0 4px; border-top-left-radius: 10px; }
+.corner-bracket.tr { top: -2px; right: -2px; border-width: 4px 4px 0 0; border-top-right-radius: 10px; }
+.corner-bracket.br { bottom: -2px; right: -2px; border-width: 0 4px 4px 0; border-bottom-right-radius: 10px; }
+.corner-bracket.bl { bottom: -2px; left: -2px; border-width: 0 0 4px 4px; border-bottom-left-radius: 10px; }
+
+.scanner-bottom-bar {
+  padding: 14px 16px;
+  background: rgba(15, 23, 42, 0.92);
+  text-align: center;
+  z-index: 20;
+}
+/* Printed QR Poster Layout with 4 Geometric Reference Markers */
+.qr-poster-sheet {
+  background: #fff;
+  border: 2px solid #cbd5e1;
+  position: relative;
+  margin: 0 auto;
+  padding: 36px;
+  text-align: center;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+}
+.poster-a4-portrait { width: 210mm; min-height: 297mm; }
+.poster-a4-landscape { width: 297mm; min-height: 210mm; }
+.poster-a5-portrait { width: 148mm; min-height: 210mm; }
+.poster-a5-landscape { width: 210mm; min-height: 148mm; }
+
+.ref-marker {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border: 6px solid #000;
+  background: #fff;
+}
+.ref-marker::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  background: #000;
+}
+.marker-p1 { top: 14mm; left: 14mm; }
+.marker-p2 { top: 14mm; right: 14mm; }
+.marker-p3 { bottom: 14mm; right: 14mm; }
+.marker-p4 { bottom: 14mm; left: 14mm; }
+
+/* Admin Sidebar */
+.admin-sidebar {
+  min-height: 100vh;
+  background: #0f172a;
+  color: #cbd5e1;
+}
+.admin-sidebar .nav-link {
+  color: #94a3b8;
+  border-radius: 8px;
+  margin-bottom: 4px;
+}
+.admin-sidebar .nav-link.active, .admin-sidebar .nav-link:hover {
+  background: #1e293b;
+  color: #fff;
+}
+
+@media print {
+  body * { visibility: hidden; }
+  #printablePosterArea, #printablePosterArea *, #printableReportArea, #printableReportArea * {
+    visibility: visible;
+  }
+  #printablePosterArea, #printableReportArea {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    box-shadow: none !important;
+    border: none !important;
+  }
 }
